@@ -23,7 +23,10 @@ export class FX {
   resize() {
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     const w = Math.round(innerWidth * dpr); const h = Math.round(innerHeight * dpr);
-    if (this.canvas.width !== w || this.canvas.height !== h) { this.canvas.width = w; this.canvas.height = h; }
+    if (this.canvas.width !== w || this.canvas.height !== h) {
+      this.canvas.width = w; this.canvas.height = h;
+      this._transparent = false;
+    }
     this.dpr = dpr;
   }
   add(p) {
@@ -83,6 +86,7 @@ export class FX {
   }
 
   update(dt) {
+    if (this.parts.length === 0) return;
     const H = innerHeight + 200;
     for (const p of this.parts) {
       p.age += dt;
@@ -140,6 +144,9 @@ export class FX {
 
   draw() {
     this.resize();
+    // The last particle frame still needs one clear; later empty frames do not.
+    if (this.parts.length === 0 && this._transparent) return;
+    this._transparent = this.parts.length === 0;
     const c = this.ctx; const dpr = this.dpr;
     c.setTransform(1, 0, 0, 1, 0, 0);
     c.clearRect(0, 0, this.canvas.width, this.canvas.height);
