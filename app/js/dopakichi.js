@@ -4,6 +4,13 @@
 import { Spring, tween, wait, lerp, clamp, rand, pick, quadPoint, easeOutQuad, easeInQuad, easeOutBack, easeInOutCubic, easeOutCubic, onFrame } from './core.js';
 
 const NS = 'http://www.w3.org/2000/svg';
+
+// Avoid invalidating SVG paint for unchanged values. Reading an attribute does
+// not measure layout, and consulting the node keeps external writes coherent.
+const attr = (node, name, value) => {
+  const text = String(value);
+  if (node.getAttribute(name) !== text) node.setAttribute(name, text);
+};
 export const INK = '#000';
 const CREAM = '#fff3e4';
 export const PALETTES = {
@@ -244,22 +251,33 @@ export class Dopakichi {
     // blink
     if (t > this.blinkAt) { this.blinkK = 1; this.blinkAt = t + rand(1800, 4200); }
     this.blinkK = Math.max(0, this.blinkK - dt * 7);
+    // Hands are simulation state too: carry/point/clap can start while hidden.
+    const S = this.S;
+    this.hands.forEach((h, i) => {
+      if (h.mode === 'rest') {
+        const r = this.restHand(h.side, h);
+        const sway = Math.sin(t / 400 + i * 1.3) * 1.5 * S;
+        h.x = r.x + sway; h.y = r.y;
+      }
+    });
+    const display = this.visible ? '' : 'none';
+    if (this.root.style.display !== display) this.root.style.display = display;
+    if (this.armsFront.style.display !== display) this.armsFront.style.display = display;
+    // Keep springs, gaze, blinking, random draws and hand positions advancing.
+    // Only SVG output is skipped. Re-showing always renders the current state.
+    if (!this.visible) return;
     const blink = this.eyes === 'open' ? 1 - Math.sin(this.blinkK * Math.PI) * 0.92 : 1;
 
     const breath = Math.sin(t / 520 + this.id) * 0.018;
     const beat = ctx.beat || 0;
     const sy = (this.sq.value + breath + this.bob * beat * 0.06) * this.stretchY;
     const sx = this.stretchX / Math.sqrt(Math.max(0.2, this.sq.value + breath));
-    const S = this.S;
     const pc = 60 * S;
     const shakeX = this.shake ? Math.sin(t / 22) * this.shake : 0;
     const bx = this.x + shakeX; const by = this.y - this.lift;
     const rot = this.rot + this.lean.value;
-    this.root.setAttribute('opacity', this.opacity);
-    // Arms live in a separate front layer, so hide them together with the body.
-    this.root.style.display = this.visible ? '' : 'none';
-    this.armsFront.style.display = this.visible ? '' : 'none';
-    this.armsFront.setAttribute('opacity', this.opacity);
+    attr(this.root, 'opacity', this.opacity);
+    attr(this.armsFront, 'opacity', this.opacity);
     this.bodyG.setAttribute('transform', `translate(${bx} ${by - pc}) rotate(${rot}) translate(0 ${pc}) scale(${S * sx} ${S * sy})`);
     const gy = this.ground ?? this.y;
     const hk = clamp(1 - (gy - by) / 400, 0.2, 1);
@@ -283,7 +301,7 @@ export class Dopakichi {
     this.mouthG.setAttribute('transform', `translate(${lx * 0.6} ${G.mouthY + ly * 0.5})`);
     this.cheeks.forEach((c, i) => {
       const k = 1 + this.cheekPuff * 0.7;
-      c.setAttribute('rx', G.cheek.rx * k); c.setAttribute('ry', G.cheek.ry * k);
+      attr(c, 'rx', G.cheek.rx * k); attr(c, 'ry', G.cheek.ry * k);
       c.setAttribute('cx', (i ? 1 : -1) * (G.cheek.x + this.cheekPuff * 3) + lx * 0.4);
     });
     this.feet.forEach((f, i) => {
@@ -296,11 +314,6 @@ export class Dopakichi {
     const lpx = this.lw * S;
     this.hands.forEach((h, i) => {
       const sh = this.shoulder(h.side);
-      if (h.mode === 'rest') {
-        const r = this.restHand(h.side, h);
-        const sway = Math.sin(t / 400 + i * 1.3) * 1.5 * S;
-        h.x = r.x + sway; h.y = r.y;
-      }
       const a = this.arms[i];
       const dx = h.x - sh.x; const dy = h.y - sh.y;
       const len = Math.hypot(dx, dy) || 1;
@@ -311,16 +324,17 @@ export class Dopakichi {
       const c = { x: (sh.x + h.x) / 2 + nx * bend, y: (sh.y + h.y) / 2 + ny * bend + droop };
       const d = `M${sh.x} ${sh.y} Q${c.x} ${c.y} ${h.x} ${h.y}`;
       const w = Math.max(3, G.arm * S * Math.min(1, Math.sqrt(40 * S / len)));
-      a.out.setAttribute('d', d); a.out.setAttribute('stroke-width', w + 2 * lpx);
-      a.inn.setAttribute('d', d); a.inn.setAttribute('stroke-width', w);
+      a.out.setAttribute('d', d); attr(a.out, 'stroke-width', w + 2 * lpx);
+      a.inn.setAttribute('d', d); attr(a.inn, 'stroke-width', w);
       a.hand.setAttribute('cx', h.x); a.hand.setAttribute('cy', h.y);
-      a.hand.setAttribute('r', G.hand * S); a.hand.setAttribute('stroke-width', lpx);
+      attr(a.hand, 'r', G.hand * S); attr(a.hand, 'stroke-width', lpx);
       if (h.carry != null) {
-        a.digit.textContent = h.carry;
+        const digit = String(h.carry);
+        if (a.digit.textContent !== digit) a.digit.textContent = digit;
         a.digit.setAttribute('x', h.x); a.digit.setAttribute('y', h.y - 20 * S - 10);
-        a.digit.setAttribute('font-size', Math.max(26, 40 * S));
-        a.digit.style.display = '';
-      } else a.digit.style.display = 'none';
+        attr(a.digit, 'font-size', Math.max(26, 40 * S));
+        if (a.digit.style.display !== '') a.digit.style.display = '';
+      } else if (a.digit.style.display !== 'none') a.digit.style.display = 'none';
     });
   }
 

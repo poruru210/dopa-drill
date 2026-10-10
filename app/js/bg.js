@@ -238,7 +238,10 @@ export class Backdrop {
   resize() {
     const dpr = Math.min(1.25, window.devicePixelRatio || 1);
     const w = Math.round(innerWidth * dpr); const h = Math.round(innerHeight * dpr);
-    if (this.canvas.width !== w || this.canvas.height !== h) { this.canvas.width = w; this.canvas.height = h; }
+    if (this.canvas.width !== w || this.canvas.height !== h) {
+      this.canvas.width = w; this.canvas.height = h;
+      this._transparent = false;
+    }
     this.dpr = dpr;
   }
   // Unlockable backgrounds (id041, id042); the CSS fallback gets matching colours.
@@ -258,6 +261,17 @@ export class Backdrop {
     }
     this.resize();
     const gl = this.gl;
+    // This is the shader's exact zero-alpha region, not a visual threshold.
+    // Erase the last visible frame once, including low-E flash/reach exits.
+    if (s.E <= 0.1 && s.reach <= 0 && s.flash <= 0) {
+      if (!this._transparent) {
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        this._transparent = true;
+      }
+      return;
+    }
+    this._transparent = false;
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
     gl.uniform2f(this.u.uRes, this.canvas.width, this.canvas.height);
     gl.uniform2f(this.u.uCenter, s.cx * this.dpr, s.cy * this.dpr);
