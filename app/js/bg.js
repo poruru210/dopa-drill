@@ -261,9 +261,11 @@ export class Backdrop {
     }
     this.resize();
     const gl = this.gl;
-    // This is the shader's exact zero-alpha region, not a visual threshold.
+    // Match uniform1f's float32 conversion: lerp can leave a positive
+    // JS double long after uReach rounds to zero. Keep the simulation state
+    // unchanged; do not truncate the fade with an arbitrary visual epsilon.
     // Erase the last visible frame once, including low-E flash/reach exits.
-    if (s.E <= 0.1 && s.reach <= 0 && s.flash <= 0) {
+    if (s.E <= 0.1 && Math.fround(s.reach) <= 0 && s.flash <= 0) {
       if (!this._transparent) {
         gl.clearColor(0, 0, 0, 0);
         gl.clear(gl.COLOR_BUFFER_BIT);
